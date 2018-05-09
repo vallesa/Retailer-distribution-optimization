@@ -1,0 +1,164 @@
+!@encoding CP1252
+model FinalProject
+uses "mmxprs"; !gain access to the Xpress-Optimizer solver
+
+!optional parameters section
+parameters
+!  SAMPLEPARAM1='c:\test\'
+!  SAMPLEPARAM2=false
+   PROJECTDIR='' ! for when file is added to project
+end-parameters
+
+!sample declarations section
+declarations ! under this section we declare the variables
+	
+ node = 1..27                                ! Constant: Number of persons/projects
+  M = 123456789	
+		
+		! parameters
+orderID: array(node) of string
+  x: array(node) of integer
+  y: array(node) of integer
+  TW_a: array(node) of integer
+  TW_b: array(node) of integer
+  Cf: array(node) of integer
+  Cs: array(node) of integer
+  Cu: array(node) of integer
+  d: array(node,node) of real
+  t: array(node,node) of real ! this time is how much time it takes to go from i to j and is calculated based on distance and the velocity of the truck
+ 
+   
+   ! variables
+  F: array(node) of mpvar
+  S: array(node) of mpvar
+  U: array(node) of mpvar
+  Y: array(node,node) of mpvar ! wwith mpvar we declare the variable. By default the variables are continous and non negative
+  T: array(node) of mpvar
+
+   
+end-declarations
+
+ forall(i in node)
+  forall(j in node) 
+   Y(i,j) is_binary  
+
+forall(i in node) 
+F(i) is_binary
+
+forall(i in node)
+S(i) is_binary
+
+forall(i in node)
+U(i) is_binary
+
+
+
+! Read from data file
+ declarations
+  PP = 7
+  NP = 27                               ! Constant: Number of persons/projects
+  P = 1..NP                             ! Set (range) of persons
+  W = 1..PP                            ! Set (range) of work projects
+  PREF: array(P,W) of integer 
+ end-declarations
+  
+ initializations from 'data1.txt'
+  PREF
+ end-initializations
+
+forall(i in node)
+ x(i) := PREF(i,1)
+ 
+forall(i in node)
+ y(i) := PREF(i,2)
+ 
+forall(i in node) 
+ TW_a(i) := PREF(i,3)
+forall(i in node)
+ TW_b(i) := PREF(i,4)
+forall(i in node)
+ Cs(i) := PREF(i,5)
+forall(i in node)
+ Cf(i) := PREF(i,6)
+forall(i in node)
+ Cu(i) := PREF(i,7)
+
+writeln("x:",x)
+writeln("y:",y)
+writeln("TW_a:",TW_a)
+writeln("TW_b:",TW_b)
+writeln("Cu:",Cu)
+writeln("Cf:",Cf)
+writeln("Cs:",Cs)
+
+
+! distance matrix should be 27*27 given that we have included start and finish as nodes 26 and 27
+ forall(i in node) 
+  forall (j in node)
+   d(i,j) := sqrt((x(j)-x(i))^2 + (y(j)-y(i))^2)
+   
+! I think we now need to make a time matrix based on the distance
+forall(i in node) 
+  forall (j in node)
+   t(i,j) := d(i,j)/50
+
+   
+   ! objetive
+ Obj:= (sum(i in node)sum(j in node) d(i,j)*Y(i,j)) + (sum(i in node) Cf(i)*F(i))+(sum(i in node) Cs(i)*S(i))+(sum(i in node) Cu(i)*U(i))
+
+! constraints
+
+! in the first constraint we are making sure that all the arrival nodes are either satisfied by truck or by a third party
+forall(i in node | i<>27 )sum(j in node | j<>i)Y(i,j)+ F(i) +S(i)+U(i)  = 1
+
+! in the first constraint we are making sure that all the departure nodes are either satisfied by truck or by a third party
+forall(i in node | i<>26)sum(j in node | j<>i)Y(j,i)+ F(i) + S(i) + U(i)  = 1
+
+! next, we need to make sure that the time of arrival is higher than the (time of departure at the previous node plus the transportation time)
+forall(i in node)
+forall(j in node)
+T(j) >=  T(i) + t(i,j) - 24*(1-Y(i,j))
+
+! in this constraint we are making sure that the lower limit is lower than the arrival time 
+forall(i in node)
+TW_a(i) <= T(i)
+
+! arrival time is greater than the upper limit
+ forall(i in node)
+T(i) <= TW_b(i)
+
+! given that we have defined the start as node 26 and end at node 27, we just need to make sure that nodes 26 and 27 are not covered by third parties
+F(26)+S(26)+U(26) = 0
+F(27)+S(27)+U(27) = 0
+
+! stoping after 30 minutes
+setparam("XPRS_MAXTIME", 300)
+! Solve the problem
+minimize(Obj)
+
+! Solution printing
+
+
+ writeln("Total cost: ", getobjval)
+ 
+ forall(i in node)
+ 	forall(j in node)
+ 	if(getsol(Y(i,j))=1) then 
+  			writeln(" the arc between ", i, " and ", j, " is covered by truck " )
+    end-if
+  forall(i in node)
+  			if(getsol(U(i))=1) then
+  			writeln(" the shipping company UPS will deliver order ", i )
+  			end-if
+  forall(i in node)
+  			if(getsol(F(i))=1) then
+  			writeln(" the shipping company Fedex will deliver order ", i )
+  			end-if
+  forall(i in node)
+  		    if(getsol(S(i))=1) then
+  			writeln(" the shipping company USPS will deliver order ", i )
+  			end-if
+  			
+
+ 		
+end-model 
